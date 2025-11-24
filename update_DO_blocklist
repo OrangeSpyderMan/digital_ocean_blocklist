@@ -19,7 +19,7 @@ curl -s "$URL" | awk -F, -v dur="$DURATION" -v reas="$REASON" 'NF > 0 {print dur
 echo "Flushing old '$REASON' decisions..."
 
 # 3. DELETE old decisions using the --scenario flag
-# This deletes all bans where the reason/scenario is "digital ocean"
+# This deletes all bans where the reason/scenario is $REASON
 sudo cscli decisions delete --scenario "$REASON"
 
 echo "Importing new list..."
