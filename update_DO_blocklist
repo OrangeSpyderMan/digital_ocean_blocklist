@@ -1,0 +1,30 @@
+#!/bin/bash
+
+# Configuration
+URL="https://digitalocean.com/geo/google.csv"
+FILE="crowdsec_blocklist.csv"
+DURATION="876000h"  # 100 years in hours
+REASON="DigitalOcean"
+
+echo "Downloading and processing list..."
+
+# 1. Create header
+echo "duration,scope,value,reason" > "$FILE"
+
+# 2. Download and format
+# We set the 'reason' column in the CSV to the value of $REASON
+# CrowdSec will import this string into the 'scenario' field of the decision.
+curl -s "$URL" | awk -F, -v dur="$DURATION" -v reas="$REASON" 'NF > 0 {print dur ",range," $1 "," reas}' >> "$FILE"
+
+echo "Flushing old '$REASON' decisions..."
+
+# 3. DELETE old decisions using the --scenario flag
+# This deletes all bans where the reason/scenario is "digital ocean"
+sudo cscli decisions delete --scenario "$REASON"
+
+echo "Importing new list..."
+# 4. Import the new list
+sudo cscli decisions import -i "$FILE"
+
+echo "Done! List synced."
+rm "$FILE"
