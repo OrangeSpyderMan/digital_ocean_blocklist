@@ -7,24 +7,35 @@ DURATION="876000h"  # 100 years in hours
 REASON="DigitalOcean"
 
 echo "Downloading and processing list..."
+echo "Downloading from : $URL"
+echo "Filename : $FILE"
+echo "Block duration : $DURATION"
+echo "cscli decision reason : $REASON"
 
 # 1. Create header
+echo -n "Adding header..."
 echo "duration,scope,value,reason" > "$FILE"
+echo "done!"
 
 # 2. Download and format
 # We set the 'reason' column in the CSV to the value of $REASON
 # CrowdSec will import this string into the 'scenario' field of the decision.
+echo -n "Download and enriching CIDR list..."
 curl -Ls "$URL" | awk -F, -v dur="$DURATION" -v reas="$REASON" 'NF > 0 {print dur ",range," $1 "," reas}' >> "$FILE"
+echo "done!"
 
 echo "Flushing old '$REASON' decisions..."
 
 # 3. DELETE old decisions using the --scenario flag
 # This deletes all bans where the reason/scenario is $REASON
 sudo cscli decisions delete --scenario "$REASON"
+echo "Done!"
 
 echo "Importing new list..."
 # 4. Import the new list
 sudo cscli decisions import -i "$FILE"
-echo "\n"
+echo -e "\n"
 echo "Done! List synced."
+echo -n "Removing file..."
 rm "$FILE"
+echo "done!"
