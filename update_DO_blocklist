@@ -14,7 +14,7 @@ echo "duration,scope,value,reason" > "$FILE"
 # 2. Download and format
 # We set the 'reason' column in the CSV to the value of $REASON
 # CrowdSec will import this string into the 'scenario' field of the decision.
-curl -s "$URL" | awk -F, -v dur="$DURATION" -v reas="$REASON" 'NF > 0 {print dur ",range," $1 "," reas}' >> "$FILE"
+curl -Ls "$URL" | awk -F, -v dur="$DURATION" -v reas="$REASON" 'NF > 0 {print dur ",range," $1 "," reas}' >> "$FILE"
 
 echo "Flushing old '$REASON' decisions..."
 
@@ -25,6 +25,6 @@ sudo cscli decisions delete --scenario "$REASON"
 echo "Importing new list..."
 # 4. Import the new list
 sudo cscli decisions import -i "$FILE"
-
+echo "\n"
 echo "Done! List synced."
 rm "$FILE"
