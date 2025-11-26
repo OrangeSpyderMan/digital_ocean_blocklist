@@ -1,41 +1,239 @@
 #!/bin/bash
 
-# Configuration
+# Fail fast and treat unset vars as errors
+set -euo pipefail
+
+# ==========================================
+# DEFAULT CONFIGURATION
+# ==========================================
 URL="https://digitalocean.com/geo/google.csv"
 FILE="crowdsec_blocklist.csv"
-DURATION="876000h"  # 100 years in hours
+DURATION="876000h"  # Default: 100 years in hours
 REASON="DigitalOcean"
 
-echo "Downloading and processing list..."
-echo "Downloading from : $URL"
-echo "Filename : $FILE"
-echo "Block duration : $DURATION"
-echo "cscli decision reason : $REASON"
+# ==========================================
+# SUDO DETECTION
+# ==========================================
+# If user ID is 0 (root), sudo is empty. Otherwise, sudo is "sudo".
+if [ "$(id -u)" -eq 0 ]; then
+    SUDO_CMD=""
+else
+    SUDO_CMD="sudo"
+fi
 
-# 1. Create header
-echo -n "Adding header..."
-echo "duration,scope,value,reason" > "$FILE"
-echo "done!"
+# Dry-run mode (0/1). When enabled, cscli commands are printed, not executed.
+DRY_RUN=0
+# Keep generated file after import (0/1)
+KEEP_FILE=0
 
-# 2. Download and format
-# We set the 'reason' column in the CSV to the value of $REASON
-# CrowdSec will import this string into the 'scenario' field of the decision.
-echo -n "Download and enriching CIDR list..."
-curl -Ls "$URL" | awk -F, -v dur="$DURATION" -v reas="$REASON" 'NF > 0 {print dur ",range," $1 "," reas}' >> "$FILE"
-echo "done!"
 
-echo "Flushing old '$REASON' decisions..."
+# ==========================================
+# FUNCTIONS
+# ==========================================
 
-# 3. DELETE old decisions using the --scenario flag
-# This deletes all bans where the reason/scenario is $REASON
-sudo cscli decisions delete --scenario "$REASON"
-echo "Done!"
+# Print usage information
+usage() {
+    exit_code=${1:-1}
+    echo "Usage: $0 [OPTIONS] {download|append|sync|refresh}"
+    echo ""
+    echo "Actions:"
+    echo "  download : Download and format the CSV only (no import)"
+    echo "  append   : Download and import (adds to existing bans)"
+    echo "  sync     : Download, DELETE old bans matching the reason, then import"
+    echo "  refresh  : Alias for 'sync' (download, delete old, import)"
+    echo ""
+    echo "Options:"
+    echo "  -u URL      Override blocklist URL (default: $URL)"
+    echo "  -d DURATION Override duration (default: $DURATION). Use 'h' for hours."
+    echo "  -r REASON   Override reason/scenario name (default: '$REASON')"
+    echo "  -n, --dry-run  Do not execute cscli; show actions only"
+    echo "  -k, --keep-file  Keep the generated CSV file after import"
+    echo "  -f, --filename  Set output filename (default: $FILE). Temporary file will be named \"_<basename>.tmp\" in same directory."
+    echo "  -h, --help   Show this help message"
+    exit "$exit_code"
+}
 
-echo "Importing new list..."
-# 4. Import the new list
-sudo cscli decisions import -i "$FILE"
-echo -e "\n"
-echo "Done! List synced."
-echo -n "Removing file..."
-rm "$FILE"
-echo "done!"
+# Function to download and format the list
+prepare_list() {
+    echo "Downloading and processing list..."
+
+    # Create temp file in same directory as $FILE, named _<basename>.tmp
+    dir=$(dirname -- "$FILE")
+    base=$(basename -- "$FILE")
+
+    # Use mktemp in the same directory to avoid races: pattern _<basename>.tmp.XXXXXX
+    # Ensure dir exists and writable (dirname always returns '.' at minimum)
+    if [ ! -d "$dir" ]; then
+        echo "Error: Directory '$dir' does not exist for output file '$FILE'" >&2
+        exit 3
+    fi
+    if [ ! -w "$dir" ]; then
+        echo "Error: No write permission in directory '$dir' for output file '$FILE'" >&2
+        exit 4
+    fi
+
+    tmpfile=$(mktemp "$dir/_${base}.tmp.XXXXXX")
+    # Use -fsSL to fail on HTTP errors and be silent; -L to follow redirects
+    if ! curl -fsSL "$URL" -o "$tmpfile"; then
+        echo "Error: Failed to download $URL" >&2
+        rm -f "$tmpfile"
+        exit 2
+    fi
+
+    echo "duration,scope,value,reason" > "$FILE"
+    awk -F, -v dur="$DURATION" -v reas="$REASON" 'NF > 0 {print dur ",range," $1 "," reas}' "$tmpfile" >> "$FILE"
+    rm -f "$tmpfile"
+    echo "File saved to $FILE"
+}
+
+# Function to delete existing decisions for this reason
+flush_old() {
+    echo "Flushing old '$REASON' decisions..."
+    if [ -n "$SUDO_CMD" ]; then
+        run_cmd $SUDO_CMD cscli decisions delete --scenario "$REASON"
+    else
+        run_cmd cscli decisions delete --scenario "$REASON"
+    fi
+}
+
+# Function to import the new list
+import_list() {
+    echo "Importing new list to CrowdSec..."
+    if [ -n "$SUDO_CMD" ]; then
+        run_cmd $SUDO_CMD cscli decisions import -i "$FILE"
+    else
+        run_cmd cscli decisions import -i "$FILE"
+    fi
+}
+
+# Helper to run a command or echo it in dry-run mode
+run_cmd() {
+    # Run command safely without eval. Arguments are passed as-is.
+    if [ "${DRY_RUN:-0}" -eq 1 ]; then
+        echo "[DRY-RUN] Would run: $*"
+    else
+        "$@"
+    fi
+}
+
+
+
+# ==========================================
+# ARGUMENT PARSING
+# ==========================================
+# Parse options (short and long) in a single loop
+while [ "$#" -gt 0 ]; do
+    case "$1" in
+        -n|--dry-run)
+            DRY_RUN=1
+            shift
+            ;;
+        -k|--keep-file)
+            KEEP_FILE=1
+            shift
+            ;;
+        -f|--filename)
+            if [[ "$1" = "-f" ]]; then
+                shift
+                if [ "$#" -eq 0 ]; then
+                    echo "Error: -f requires an argument" >&2
+                    usage 1
+                fi
+                FILE="$1"
+                shift
+            else
+                # --filename or --filename=...
+                if [[ "$1" == *=* ]]; then
+                    FILE="${1#--filename=}"
+                    shift
+                else
+                    shift
+                    if [ "$#" -eq 0 ]; then
+                        echo "Error: --filename requires an argument" >&2
+                        usage 1
+                    fi
+                    FILE="$1"
+                    shift
+                fi
+            fi
+            ;;
+        -u)
+            shift
+            URL="$1"
+            shift
+            ;;
+        -d)
+            shift
+            DURATION="$1"
+            shift
+            ;;
+        -r)
+            shift
+            REASON="$1"
+            shift
+            ;;
+        -h|--help)
+            usage 0
+            ;;
+        download|append|sync|refresh)
+            ACTION="$1"
+            shift
+            break
+            ;;
+        *)
+            echo "Error: Unknown option or action: $1" >&2
+            usage 1
+            ;;
+    esac
+done
+
+# If ACTION wasn't set by the parser, require an action; otherwise show help
+if [ -z "${ACTION:-}" ]; then
+    echo "Error: Missing action." >&2
+    usage 1
+fi
+
+
+# Main Logic based on the parsed action
+case "$ACTION" in
+    download)
+        # Just download and format, don't touch CrowdSec
+        prepare_list
+        ;;
+        
+    append)
+        # Download and add new decisions (keep existing ones)
+        prepare_list
+        import_list
+        if [ "${DRY_RUN:-0}" -eq 1 ]; then
+            echo "[DRY-RUN] No changes made"
+        else
+            if [ "${KEEP_FILE:-0}" -ne 1 ]; then
+                rm -f "$FILE"
+            else
+                echo "Keeping file: $FILE"
+            fi
+        fi
+        ;;
+        
+    refresh|sync)
+        # Download, delete old ones, and add new ones (The "Overwrite" method)
+        prepare_list
+        flush_old
+        import_list
+        if [ "${DRY_RUN:-0}" -eq 1 ]; then
+            echo "[DRY-RUN] No changes made"
+        else
+            if [ "${KEEP_FILE:-0}" -ne 1 ]; then
+                rm -f "$FILE"
+            else
+                echo "Keeping file: $FILE"
+            fi
+        fi
+        ;;
+        
+    *)
+        echo "Error: Invalid action '$ACTION'"
+        usage 1
+        ;;
+esac
