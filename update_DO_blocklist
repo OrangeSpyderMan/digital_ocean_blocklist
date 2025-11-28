@@ -25,6 +25,8 @@ fi
 DRY_RUN=0
 # Keep generated file after import (0/1)
 KEEP_FILE=0
+# Verbose mode (0/1) - print extra details
+VERBOSE=0
 
 
 # ==========================================
@@ -48,7 +50,8 @@ usage() {
     echo "  -r REASON   Override reason/scenario name (default: '$REASON')"
     echo "  -n, --dry-run  Do not execute cscli; show actions only"
     echo "  -k, --keep-file  Keep the generated CSV file after import"
-    echo "  -f, --filename  Set output filename (default: $FILE). Temporary file will be named \"_<basename>.tmp\" in same directory."
+    echo "  -f, --filename  Set output filename (default: $FILE). Temporary file will be named \"_<basename>.tmp.XXXXXX\" in same directory."
+    echo "  -v, --verbose  Print additional debug/verbose information"
     echo "  -h, --help   Show this help message"
     exit "$exit_code"
 }
@@ -80,8 +83,33 @@ prepare_list() {
         exit 2
     fi
 
+    # Verbose: show download file and line counts
+    vprint "Downloaded to: $tmpfile"
+    if [ "${VERBOSE:-0}" -eq 1 ]; then
+        lines=$(wc -l < "$tmpfile" || true)
+        vprint "Downloaded lines: $lines"
+    fi
+
+    # Enrichment: add header and convert each CIDR into a CrowdSec decision CSV line
+    vprint "Enrichment: adding header 'duration,scope,value,reason' and mapping each CIDR -> 'duration,range,<cidr>,<reason>'"
     echo "duration,scope,value,reason" > "$FILE"
     awk -F, -v dur="$DURATION" -v reas="$REASON" 'NF > 0 {print dur ",range," $1 "," reas}' "$tmpfile" >> "$FILE"
+
+    # Count resulting decisions (subtract header)
+    if [ -f "$FILE" ]; then
+        total_lines=$(wc -l < "$FILE" 2>/dev/null || true)
+        if [ -n "$total_lines" ] && [ "$total_lines" -gt 0 ]; then
+            decisions=$((total_lines - 1))
+        else
+            decisions=0
+        fi
+        vprint "Wrote CSV to: $FILE (decisions: $decisions)"
+        if [ "${VERBOSE:-0}" -eq 1 ]; then
+            vprint "Sample lines from CSV:"
+            head -n 5 "$FILE" | sed -n '1,5p' | sed 's/^/[VERBOSE]  /'
+        fi
+    fi
+
     rm -f "$tmpfile"
     echo "File saved to $FILE"
 }
@@ -89,30 +117,42 @@ prepare_list() {
 # Function to delete existing decisions for this reason
 flush_old() {
     echo "Flushing old '$REASON' decisions..."
-    if [ -n "$SUDO_CMD" ]; then
-        run_cmd $SUDO_CMD cscli decisions delete --scenario "$REASON"
-    else
-        run_cmd cscli decisions delete --scenario "$REASON"
-    fi
+    vprint "Preparing to delete decisions for scenario: $REASON"
+    run_cmd cscli decisions delete --scenario "$REASON"
 }
 
 # Function to import the new list
 import_list() {
     echo "Importing new list to CrowdSec..."
-    if [ -n "$SUDO_CMD" ]; then
-        run_cmd $SUDO_CMD cscli decisions import -i "$FILE"
-    else
-        run_cmd cscli decisions import -i "$FILE"
-    fi
+    vprint "Preparing to import decisions from: $FILE"
+    run_cmd cscli decisions import -i "$FILE"
 }
 
 # Helper to run a command or echo it in dry-run mode
 run_cmd() {
-    # Run command safely without eval. Arguments are passed as-is.
+    # Build command array, prepend sudo if needed
+    local cmd=("$@")
+    if [ -n "${SUDO_CMD:-}" ]; then
+        cmd=("$SUDO_CMD" "${cmd[@]}")
+    fi
+
     if [ "${DRY_RUN:-0}" -eq 1 ]; then
-        echo "[DRY-RUN] Would run: $*"
+        echo "[DRY-RUN] Would run: ${cmd[*]}"
     else
-        "$@"
+        if [ "${VERBOSE:-0}" -eq 1 ]; then
+            echo "[VERBOSE] Running: ${cmd[*]}"
+            if [ -n "${SUDO_CMD:-}" ]; then
+                echo "[VERBOSE] Note: sudo will be used"
+            fi
+        fi
+        "${cmd[@]}"
+    fi
+}
+
+# Print when verbose enabled
+vprint() {
+    if [ "${VERBOSE:-0}" -eq 1 ]; then
+        echo "[VERBOSE] $*"
     fi
 }
 
@@ -156,6 +196,10 @@ while [ "$#" -gt 0 ]; do
                     shift
                 fi
             fi
+            ;;
+        -v|--verbose)
+            VERBOSE=1
+            shift
             ;;
         -u)
             shift

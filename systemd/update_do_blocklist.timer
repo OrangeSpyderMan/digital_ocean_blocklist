@@ -1,0 +1,11 @@
+[Unit]
+Description=Daily timer for update_DO_blocklist
+
+[Timer]
+# Run daily at 03:00 system time. Adjust OnCalendar as needed (e.g. 03:30:00)
+OnCalendar=*-*-* 03:00:00
+Persistent=true
+AccuracySec=1m
+
+[Install]
+WantedBy=timers.target

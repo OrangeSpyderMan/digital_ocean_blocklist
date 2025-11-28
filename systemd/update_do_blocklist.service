@@ -1,0 +1,22 @@
+[Unit]
+Description=Update DigitalOcean blocklist and import into CrowdSec (one-shot)
+After=network-online.target
+Wants=network-online.target
+
+[Service]
+Type=oneshot
+# By default, this service runs as the 'nobody' user.
+# If you want to use a different user, change the User and Group directives below.
+# Ensure that the user you choose has write permissions to the directory where the
+# blocklist CSV is created (e.g., /var/tmp/ based on the default ExecStart).
+User=nobody
+Group=nogroup
+# Adjust ExecStart arguments as desired. By default this keeps the CSV at /var/tmp/do_blocklist.csv
+ExecStart=/bin/bash /home/pdd/src/digital_ocean_blocklist/update_DO_blocklist -k -f /var/tmp/do_blocklist.csv sync
+# Write logs to the system journal; you can also capture to a file with a wrapper or use StandardOutput=append:/var/log/do_blocklist.log
+StandardOutput=journal
+StandardError=journal
+TimeoutStartSec=300
+
+[Install]
+WantedBy=multi-user.target

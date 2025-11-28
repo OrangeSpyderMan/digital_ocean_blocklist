@@ -1,0 +1,70 @@
+#!/bin/bash
+
+# A script to install and enable the systemd timer for the DigitalOcean blocklist updater.
+# This script checks for root privileges and uses sudo if necessary.
+
+set -euo pipefail
+
+VERBOSE=0
+
+# ==========================================
+# ARGUMENT PARSING
+# ==========================================
+while [ "$#" -gt 0 ]; do
+    case "$1" in
+        -v|--verbose)
+            VERBOSE=1
+            shift
+            ;;
+        *)
+            echo "Unknown option: $1"
+            exit 1
+            ;;
+    esac
+done
+
+# ==========================================
+# SUDO DETECTION
+# ==========================================
+# If user ID is 0 (root), sudo is empty. Otherwise, sudo is "sudo".
+if [ "$(id -u)" -eq 0 ]; then
+    SUDO_CMD=""
+else
+    SUDO_CMD="sudo"
+fi
+
+# Function to print verbose messages
+vprint() {
+    if [ "$VERBOSE" -eq 1 ]; then
+        echo "$1"
+    fi
+}
+
+# Function to run a command, with optional sudo and verbosity
+run_cmd() {
+    local cmd=("$@")
+    if [ -n "$SUDO_CMD" ]; then
+        cmd=("$SUDO_CMD" "${cmd[@]}")
+    fi
+    vprint "Running: ${cmd[*]}"
+    "${cmd[@]}"
+}
+
+# ==========================================
+# INSTALLATION
+# ==========================================
+echo "Installing systemd units..."
+
+run_cmd cp update_do_blocklist.service /etc/systemd/system/
+run_cmd cp update_do_blocklist.timer /etc/systemd/system/
+
+echo "Reloading systemd daemon..."
+run_cmd systemctl daemon-reload
+
+echo "Enabling and starting the timer..."
+run_cmd systemctl enable --now update_do_blocklist.timer
+
+echo "Installation complete."
+echo
+echo "Checking timer status..."
+run_cmd systemctl status update_do_blocklist.timer
