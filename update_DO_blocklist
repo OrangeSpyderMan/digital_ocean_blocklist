@@ -144,7 +144,7 @@ run_cmd() {
         if [ "${VERBOSE:-0}" -eq 1 ]; then
             echo "[VERBOSE] Running: ${cmd[*]}"
             if [ -n "${SUDO_CMD:-}" ]; then
-                echo "[VERBOSE] Note: sudo will be used"
+                echo "[VERBOSE] Note: $SUDO_CMD will be used"
             fi
         fi
         "${cmd[@]}"
