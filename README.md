@@ -12,14 +12,14 @@ The script downloads DigitalOcean's published CIDR list (the default source is t
 
 ### Important runtime notes
 
-- The script detects whether it's running as root and will prefix `cscli` commands with `sudo` when required.
+- The script detects whether it's running as root and will prefix `cscli` commands with `sudo` when required. This can be overridden with the `--no-sudo` and `--sudo-command` options.
 - Temporary downloads are created in the same directory as the target output using `mktemp` with pattern `_<basename>.tmp.XXXXXX` to avoid race conditions.
 - By default the generated CSV is removed after import unless `--keep-file` is used.
 - `--dry-run` prints the exact `cscli` commands that would be executed (prefixed with `[DRY-RUN] Would run:`) and prevents those commands from running; note that the current `--dry-run` still performs the network download and writes the CSV file.
 
 ## Commands the script runs
 
-When performing import or flush operations the script invokes `cscli` with these commands (the script will prefix with `sudo` automatically if not running as root):
+When performing import or flush operations the script invokes `cscli` with these commands (the script will prefix with `sudo` automatically if not running as root, unless `--no-sudo` is used):
 
 ```bash
 cscli decisions delete --scenario "<REASON>"
@@ -29,7 +29,7 @@ cscli decisions delete --scenario "<REASON>"
 cscli decisions import -i "<FILE>"
 ```
 
-If the script is not run as root, it will run these commands as `sudo cscli ...`.
+If the script is not run as root, it will run these commands as `sudo cscli ...`. You can use `--sudo-command` to specify an alternative to `sudo` (like `doas`).
 
 ## Verbose and dry-run behavior
 
@@ -66,6 +66,8 @@ bash update_DO_blocklist [OPTIONS] {download|append|sync|refresh}
 - `-n`, `--dry-run` show commands that would run, do not execute `cscli` operations
 - `-k`, `--keep-file` keep the generated CSV after import
 - `-f NAME`, `--filename NAME` set the output CSV filename (default `crowdsec_blocklist.csv`)
+- `--no-sudo` do not use `sudo` even if not running as root
+- `--sudo-command CMD` use a different command for privilege escalation (e.g. `doas`)
 - `-v`, `--verbose` enable verbose output
 - `-h`, `--help` show help
 

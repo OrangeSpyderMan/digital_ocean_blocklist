@@ -51,6 +51,8 @@ usage() {
     echo "  -n, --dry-run  Do not execute cscli; show actions only"
     echo "  -k, --keep-file  Keep the generated CSV file after import"
     echo "  -f, --filename  Set output filename (default: $FILE). Temporary file will be named \"_<basename>.tmp.XXXXXX\" in same directory."
+    echo "  --no-sudo    Do not use 'sudo', even if not running as root"
+    echo "  --sudo-command CMD  Specify a command to use instead of 'sudo' (e.g. 'doas')"
     echo "  -v, --verbose  Print additional debug/verbose information"
     echo "  -h, --help   Show this help message"
     exit "$exit_code"
@@ -195,6 +197,24 @@ while [ "$#" -gt 0 ]; do
                     FILE="$1"
                     shift
                 fi
+            fi
+            ;;
+        --no-sudo)
+            SUDO_CMD=""
+            shift
+            ;;
+        --sudo-command*)
+            if [[ "$1" == *=* ]]; then
+                SUDO_CMD="${1#--sudo-command=}"
+                shift
+            else
+                shift
+                if [ "$#" -eq 0 ]; then
+                    echo "Error: --sudo-command requires an argument" >&2
+                    usage 1
+                fi
+                SUDO_CMD="$1"
+                shift
             fi
             ;;
         -v|--verbose)
