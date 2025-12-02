@@ -5,15 +5,14 @@ Wants=network-online.target
 
 [Service]
 Type=oneshot
-# By default, this service runs as the 'nobody' user.
-# If you want to use a different user, change the User and Group directives below.
-# Ensure that the user you choose has write permissions to the directory where the
-# blocklist CSV is created (e.g., /var/tmp/ based on the default ExecStart).
-User=nobody
-Group=nogroup
-# Adjust ExecStart arguments as desired. By default this keeps the CSV at /var/tmp/do_blocklist.csv
+# This service runs as a dynamic user, which is created on the fly and discarded after the service runs.
+# This improves security by isolating the service from other processes.
+DynamicUser=yes
+# A cache directory is created for this service, which is used to store the blocklist CSV.
+CacheDirectory=do_blocklist
+# Adjust ExecStart arguments as desired. The blocklist CSV will be stored in the cache directory.
 # The ExecStart path below is a placeholder and will be replaced by the systemd_install script.
-ExecStart=/usr/local/bin/update_DO_blocklist -k -f /var/tmp/do_blocklist.csv sync
+ExecStart=/usr/local/bin/update_DO_blocklist -k -f ${CACHE_DIRECTORY}/do_blocklist.csv sync
 # Write logs to the system journal; you can also capture to a file with a wrapper or use StandardOutput=append:/var/log/do_blocklist.log
 StandardOutput=journal
 StandardError=journal
