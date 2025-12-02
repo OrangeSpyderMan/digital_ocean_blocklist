@@ -6,6 +6,7 @@
 set -euo pipefail
 
 VERBOSE=0
+DEST_DIR="/usr/local/bin"
 
 # ==========================================
 # ARGUMENT PARSING
@@ -15,6 +16,10 @@ while [ "$#" -gt 0 ]; do
         -v|--verbose)
             VERBOSE=1
             shift
+            ;;
+        -d|--destination)
+            DEST_DIR="$2"
+            shift 2
             ;;
         *)
             echo "Unknown option: $1"
@@ -53,9 +58,14 @@ run_cmd() {
 # ==========================================
 # INSTALLATION
 # ==========================================
-echo "Installing systemd units..."
+echo "Installing script to $DEST_DIR..."
+run_cmd cp ../update_DO_blocklist "$DEST_DIR/"
+run_cmd chmod +x "$DEST_DIR/update_DO_blocklist"
 
+echo "Installing systemd units..."
 run_cmd cp update_do_blocklist.service /etc/systemd/system/
+# Update the ExecStart path in the service file
+run_cmd sed -i "s|ExecStart=.*|ExecStart=$DEST_DIR/update_DO_blocklist -k -f /var/tmp/do_blocklist.csv sync|" /etc/systemd/system/update_do_blocklist.service
 run_cmd cp update_do_blocklist.timer /etc/systemd/system/
 
 echo "Reloading systemd daemon..."

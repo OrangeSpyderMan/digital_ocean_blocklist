@@ -12,7 +12,8 @@ Type=oneshot
 User=nobody
 Group=nogroup
 # Adjust ExecStart arguments as desired. By default this keeps the CSV at /var/tmp/do_blocklist.csv
-ExecStart=/bin/bash /home/pdd/src/digital_ocean_blocklist/update_DO_blocklist -k -f /var/tmp/do_blocklist.csv sync
+# The ExecStart path below is a placeholder and will be replaced by the systemd_install script.
+ExecStart=/usr/local/bin/update_DO_blocklist -k -f /var/tmp/do_blocklist.csv sync
 # Write logs to the system journal; you can also capture to a file with a wrapper or use StandardOutput=append:/var/log/do_blocklist.log
 StandardOutput=journal
 StandardError=journal
