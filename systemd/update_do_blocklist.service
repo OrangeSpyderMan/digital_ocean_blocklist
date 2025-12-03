@@ -5,14 +5,11 @@ Wants=network-online.target
 
 [Service]
 Type=oneshot
-# This service runs as a dynamic user, which is created on the fly and discarded after the service runs.
-# This improves security by isolating the service from other processes.
-DynamicUser=yes
-# A cache directory is created for this service, which is used to store the blocklist CSV.
-CacheDirectory=do_blocklist
-# Adjust ExecStart arguments as desired. The blocklist CSV will be stored in the cache directory.
+# This service runs as root, which is required to interact with the cscli.
+User=root
+# Adjust ExecStart arguments as desired.
 # The ExecStart path below is a placeholder and will be replaced by the systemd_install script.
-ExecStart=/usr/local/bin/update_DO_blocklist -k -f ${CACHE_DIRECTORY}/do_blocklist.csv sync
+ExecStart=/usr/local/bin/update_DO_blocklist -k --no-sudo -f /var/cache/do_blocklist.csv sync
 # Write logs to the system journal; you can also capture to a file with a wrapper or use StandardOutput=append:/var/log/do_blocklist.log
 StandardOutput=journal
 StandardError=journal
